@@ -960,7 +960,7 @@ NoDisplay=true
                 self.query_one("#console", RichLog).write(
                     "[WARN] Could not add the PipeWire launcher to Niri."
                 )
-         if installed and not await self.run_in_chroot(
+        if installed and not await self.run_in_chroot(
             self._enable_service_command("power-profiles-daemon")
         ):
             self.query_one("#console", RichLog).write(
