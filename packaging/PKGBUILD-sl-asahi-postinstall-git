@@ -1,0 +1,46 @@
+# Maintainer: Sl (Shahaf Levi) <arch@slsrepo.com>
+
+pkgname=sl-asahi-postinstall-git
+pkgver=r0.0.v0.0
+pkgrel=1
+pkgdesc="Sl's Arch Linux Installer TUI (Asahi Post Install Edition)"
+arch=('any')
+url="https://github.com/slsrepo/t2archinstall-variants"
+license=('Apache-2.0')
+depends=('python' 'python-textual')
+makedepends=('git' 'python')
+provides=('sl-asahi-postinstall')
+conflicts=('sl-asahi-postinstall')
+source=(
+  "installer::git+https://github.com/slsrepo/t2archinstall-variants.git"
+  "t2archinstall::git+https://github.com/slsrepo/t2archinstall.git"
+)
+sha256sums=('SKIP' 'SKIP')
+
+pkgver() {
+  local upstream_count upstream_hash variants_count variants_hash
+
+  cd "$srcdir/t2archinstall"
+  upstream_count=$(git rev-list --count HEAD)
+  upstream_hash=$(git rev-parse --short HEAD)
+
+  cd "$srcdir/installer"
+  variants_count=$(git rev-list --count HEAD)
+  variants_hash=$(git rev-parse --short HEAD)
+
+  printf "r%s.%s.v%s.%s" \
+    "$upstream_count" "$upstream_hash" "$variants_count" "$variants_hash"
+}
+
+prepare() {
+  cd "$srcdir/installer"
+  python3 build-arch-postinstall.py sl-asahi-postinstall --source "$srcdir/t2archinstall/t2archinstall.py"
+}
+
+check() {
+  python3 -m py_compile "$srcdir/installer/sl-asahi-postinstall"
+}
+
+package() {
+  install -Dm755 "$srcdir/installer/sl-asahi-postinstall" "$pkgdir/usr/bin/sl-asahi-postinstall"
+}
