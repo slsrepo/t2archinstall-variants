@@ -128,6 +128,11 @@ def transform_generic_arch(source_text: str) -> str:
     )
     replace_required(" t2fanrd", "", expected=2)
 
+    replace_required(
+        "Welcome to the T2 Arch Linux Installer!",
+        "Welcome to Sl's Arch Installer!",
+        expected=1,
+    )
     replace_required("T2 Arch Linux Installer", "Sl's Arch Installer")
     replace_required("Arch Linux T2", "Arch Linux")
     replace_required(
