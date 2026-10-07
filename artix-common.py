@@ -286,6 +286,9 @@ class ArtixInstaller(T2ArchInstaller):
             words = shlex.split(command)
         except ValueError:
             return command
+
+        words = [word for word in words if word != "dms-shell-niri"]
+        command = shlex.join(words)
         if len(words) < 3:
             return command
 
@@ -714,7 +717,7 @@ class ArtixInstaller(T2ArchInstaller):
 
         disable_uki = (
             f"test -f {shlex.quote(preset)} && "
-            f"sed -i -E 's|^([[:space:]]*)(default_uki|fallback_uki)=|\\1#\\2=|' {shlex.quote(preset)}"
+            f"sed -i -E 's~^([[:space:]]*)(default_uki|fallback_uki)=~\\1#\\2=~' {shlex.quote(preset)}"
         )
         if not await self.run_in_chroot(disable_uki):
             console.write("[ERROR] Failed to disable optional UKI generation.")
@@ -732,25 +735,19 @@ class ArtixInstaller(T2ArchInstaller):
         """Create the macOS Startup Manager icon."""
         console = self.query_one("#console", RichLog)
         if not await self.run_in_chroot(
-            "pacman -S --noconfirm --needed wget librsvg python-pillow",
+            "pacman -S --noconfirm --needed wget librsvg libicns",
             timeout=600,
         ):
             console.write("[ERROR] Failed to install boot icon packages")
             return
 
-        icon_url = (
-            "https://gitea.artixlinux.org/artix/artwork/raw/branch/master/"
-            "icons/artixlinux-logo-only.svg"
-        )
-        python_code = (
-            'from PIL import Image; '
-            'im=Image.open("/tmp/artix.png").convert("RGBA"); '
-            'im.save("/boot/efi/.VolumeIcon.icns", format="ICNS")'
-        )
+        icon_url = "https://arch.slsrepo.com/artixlinux.svg"
         command = (
-            f"wget -q -O /tmp/artix.svg {shlex.quote(icon_url)} && "
-            "rsvg-convert -w 1024 -h 1024 -o /tmp/artix.png /tmp/artix.svg && "
-            f"python3 -c {shlex.quote(python_code)} && "
+            "install -d -m 0755 /tmp/mac-assets && "
+            f"wget -q -O /tmp/mac-assets/arch.svg {shlex.quote(icon_url)} && "
+            "rsvg-convert -w 128 -h 128 -o /tmp/mac-assets/arch.png /tmp/mac-assets/arch.svg && "
+            "png2icns /tmp/mac-assets/.VolumeIcon.icns /tmp/mac-assets/arch.png && "
+            "install -Dm644 /tmp/mac-assets/.VolumeIcon.icns /boot/efi/.VolumeIcon.icns && "
             "test -s /boot/efi/.VolumeIcon.icns"
         )
         if await self.run_in_chroot(command, timeout=600):
@@ -904,12 +901,18 @@ NoDisplay=true
             return False
 
         if self.init_system == "openrc":
-            user_services = (
-                "rc-update -U add pipewire default && "
-                "rc-update -U add pipewire-pulse default && "
-                "rc-update -U add wireplumber default"
+            runlevel_dir = f"{home}/.config/rc/runlevels/default"
+            user_services = ("pipewire", "pipewire-pulse", "wireplumber")
+            links = " && ".join(
+                f"ln -sfn /etc/user/init.d/{service} {shlex.quote(runlevel_dir)}/{service}"
+                for service in user_services
             )
-            enable_command = f"su - {shlex.quote(username)} -c {shlex.quote(user_services)}"
+            enable_command = (
+                f"install -d -m 0755 {shlex.quote(runlevel_dir)} && "
+                f"{links} && "
+                f"chown -R {shlex.quote(username)}:{shlex.quote(username)} "
+                f"{shlex.quote(home + '/.config/rc')}"
+            )
             if not await self.run_in_chroot(enable_command):
                 self.query_one("#console", RichLog).write(
                     "[WARN] Could not enable OpenRC PipeWire user services; "
@@ -1028,15 +1031,30 @@ NoDisplay=true
             console.write("[ERROR] Failed to create the s6 greetd service.")
             return False
 
-        config = """[terminal]
-    vt = 2
-
-    [default_session]
-    command = "dms-greeter --command niri"
-    user = "greeter"
-    """
+        wrapper = (
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "set -- /usr/bin/dms-greeter --debug --command niri --cache-dir /var/cache/dms-greeter\n"
+            "if [ -s /etc/greetd/niri/config.kdl ]; then\n"
+            "    set -- \"$@\" -C /etc/greetd/niri/config.kdl\n"
+            "fi\n"
+            "exec env LIBSEAT_BACKEND=logind DMS_VOID=1 \"$@\" "
+            ">>/var/cache/dms-greeter/dms-greeter.log 2>&1\n"
+        )
+        config = (
+            "[terminal]\n"
+            "vt = 2\n"
+            "\n"
+            "[default_session]\n"
+            'command = "/usr/local/bin/dms-greeter-artix --command niri"\n'
+            'user = "greeter"\n'
+        )
         commands = [
-            f"install -Dm644 /dev/stdin /etc/greetd/config.toml <<'EOF'\n{config}EOF",
+            "install -d -m 2770 -o greeter -g greeter /var/cache/dms-greeter",
+            f"printf '%s' {shlex.quote(wrapper)} > /usr/local/bin/dms-greeter-artix && chmod 755 /usr/local/bin/dms-greeter-artix",
+            f"printf '%s' {shlex.quote(config)} > /etc/greetd/config.toml && chmod 644 /etc/greetd/config.toml",
+            f"usermod -aG greeter {shlex.quote(self.username)}",
+            "usermod -aG video,input greeter",
             self._disable_getty_command("tty2"),
             self._enable_service_command("greetd"),
         ]
