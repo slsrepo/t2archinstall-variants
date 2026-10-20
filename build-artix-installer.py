@@ -158,6 +158,7 @@ def transform_generic_arch(source_text: str) -> str:
         "enable_hybrid_graphics_btn",
         "recurring_network_notifications_fix_btn",
         "audio_dsp_btn",
+        "t2_touchid_btn",
         "suspend_sleep_btn",
         "ignore_lid_btn",
         "suspend_fix_btn",
@@ -202,6 +203,11 @@ def transform_generic_arch(source_text: str) -> str:
         r'^\s*await self\.install_audio_dsp\(\)\s*\n',
         "audio DSP dispatch block",
     )
+    remove_pattern(
+        r'^\s*elif button_id == "t2_touchid_btn":\s*\n'
+        r'^\s*await self\.install_t2_touchid\(\)\s*\n',
+        "T2 Touch ID dispatch block",
+    )
 
     replace_required(
         'self.query_one("#chroot_repo_btn").focus()',
@@ -239,6 +245,12 @@ def transform(source_text: str, mode: str) -> str:
     text = text.replace("arch-chroot", "artix-chroot")
     text = text.replace("tuned tuned-ppd", "power-profiles-daemon")
     text = text.replace('"tuned-ppd"', '"power-profiles-daemon"')
+
+    for widget_id in ("systemd_bootloader", "gnome_auto_btn"):
+        pattern = rf'^[ \t]*yield (?:RadioButton|Button)\([^\n]*id="{widget_id}"[^\n]*\)[ \t]*\n'
+        text, removed = re.subn(pattern, "", text, flags=re.MULTILINE)
+        if removed != 1:
+            raise RuntimeError(f"Expected one {widget_id} widget, found {removed}")
 
     startup_marker = '''    async def on_mount(self):
         """Initialize the application and asynchronously refresh any already-mounted target filesystem state."""
@@ -412,6 +424,11 @@ def validate_artix(text: str, variant: str, output: Path, mode: str) -> None:
     ):
         if preserved not in base_methods:
             raise RuntimeError(f"Expected upstream method is missing: {preserved}")
+
+    if mode == "t2" and 'id="t2_touchid_btn"' not in text:
+        raise RuntimeError("T2 Artix Touch ID option is missing")
+    if mode == "generic" and 'id="t2_touchid_btn"' in text:
+        raise RuntimeError("T2 Touch ID option leaked into non-T2 Artix")
 
     if mode == "t2":
         if re.search(

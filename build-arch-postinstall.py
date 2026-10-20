@@ -90,6 +90,8 @@ METHODS_TO_EXTRACT = (
     "wm_install_sl_desktop_utils",
     "install_niri",
     "install_niri_with_dms",
+    "wm_enable_dms_service",
+    "install_slash",
     "install_desktop_environment",
     "install_extras",
 )

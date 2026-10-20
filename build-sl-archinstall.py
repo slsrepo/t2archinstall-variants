@@ -107,6 +107,7 @@ def transform_generic_arch(source_text: str) -> str:
         "enable_hybrid_graphics_btn",
         "recurring_network_notifications_fix_btn",
         "audio_dsp_btn",
+        "t2_touchid_btn",
         "suspend_sleep_btn",
         "ignore_lid_btn",
         "suspend_fix_btn",
@@ -150,6 +151,11 @@ def transform_generic_arch(source_text: str) -> str:
         r'^\s*elif button_id == "audio_dsp_btn":\s*\n'
         r'^\s*await self\.install_audio_dsp\(\)\s*\n',
         "audio DSP dispatch block",
+    )
+    remove_pattern(
+        r'^\s*elif button_id == "t2_touchid_btn":\s*\n'
+        r'^\s*await self\.install_t2_touchid\(\)\s*\n',
+        "T2 Touch ID dispatch block",
     )
 
     replace_required(

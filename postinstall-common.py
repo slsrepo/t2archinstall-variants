@@ -66,7 +66,8 @@ class PostInstallerBase(UpstreamPostInstallMixin, App):
                 yield Button("KDE", id="kde_auto_btn")
                 yield Button("COSMIC", id="cosmic_auto_btn")
                 yield Button("Niri", id="niri_auto_btn")
-                yield Button("Niri + DankMaterialShell", id="niridms_auto_btn")
+                yield Button("Niri + Dux Shell", id="niridms_auto_btn")
+                yield Button("Slash (niri + Dux + Sl)", id="slash_auto_btn")
 
                 yield Static("Extras", classes="section_title")
                 yield Button("Install Extra packages (ffmpeg, pipewire, ghostty, etc.)", id="extras_btn")
@@ -115,7 +116,7 @@ class PostInstallerBase(UpstreamPostInstallMixin, App):
             await self.create_user_and_services()
         elif button_id == "config_sudo_btn":
             await self.configure_sudoers()
-        elif button_id in {"gnome_auto_btn", "kde_auto_btn", "cosmic_auto_btn", "niri_auto_btn", "niridms_auto_btn"}:
+        elif button_id in {"gnome_auto_btn", "kde_auto_btn", "cosmic_auto_btn", "niri_auto_btn", "niridms_auto_btn", "slash_auto_btn"}:
             await self.install_variant_desktop(button_id.split("_", 1)[0])
         elif button_id == "extras_btn":
             await self.install_extras()

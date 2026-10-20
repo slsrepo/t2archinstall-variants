@@ -86,16 +86,9 @@ class ArtixInstaller(T2ArchInstaller):
     SERVICE_NAME_MAP = {
         "bluetooth": "bluetoothd",
         "cups": "cupsd",
-        "gdm": "gdm",
-        "greetd": "greetd",
-        "iwd": "iwd",
-        "libvirtd": "libvirtd",
-        "NetworkManager": "NetworkManager",
         "networkmanager": "NetworkManager",
         "plasmalogin": "sddm",
-        "sddm": "sddm",
         "cosmic-greeter": "greetd",
-        "power-profiles-daemon": "power-profiles-daemon",
         "systemd-resolved": None,
         "snapper-timeline.timer": None,
         "snapper-cleanup.timer": None,
@@ -171,12 +164,6 @@ class ArtixInstaller(T2ArchInstaller):
         )
 
     def _configure_variant_ui(self) -> None:
-        for widget_id in ("systemd_bootloader", "gnome_auto_btn"):
-            try:
-                self.query_one(f"#{widget_id}").display = False
-            except Exception:
-                pass
-
         if self.INCLUDE_T2:
             return
 
@@ -220,6 +207,12 @@ class ArtixInstaller(T2ArchInstaller):
         return await super().run_command(command, timeout=timeout)
 
     async def run_in_chroot(self, inner_cmd: str, timeout: int = 300) -> bool:
+        if (
+            "sl-daily-background.timer" in inner_cmd
+            and "/usr/lib/systemd/user/" in inner_cmd
+        ):
+            return await self._enable_artix_daily_background_cron()
+
         translated = self._translate_chroot_command(inner_cmd)
         if not translated or translated.strip() == "true":
             return True
@@ -234,6 +227,63 @@ class ArtixInstaller(T2ArchInstaller):
         # stdbuf does not work with if/heredocs.
         chroot_cmd = f"artix-chroot /mnt bash -lc {shlex.quote(translated)}"
         return await self.run_command(chroot_cmd, timeout=timeout)
+
+    async def _enable_artix_daily_background_cron(self) -> bool:
+        console = self.query_one("#console", RichLog)
+        if not self.username:
+            console.write("[ERROR] Create the user before configuring daily backgrounds.")
+            return False
+
+        packages = ["cronie"]
+        service_package = self._service_package("cronie")
+        if service_package:
+            packages.append(service_package)
+        if not await self.run_in_chroot(
+            "pacman -S --noconfirm --needed " + " ".join(packages),
+            timeout=600,
+        ):
+            console.write("[ERROR] Failed to install Cronie and its Artix service.")
+            return False
+        if not await self.run_in_chroot(self._enable_service_command("cronie")):
+            console.write("[ERROR] Failed to enable Cronie for the selected init system.")
+            return False
+
+        username = self.username
+        script_path = f"/home/{username}/.local/bin/sl-daily-background-cron"
+        cron_line = f"0 10 * * * {script_path}"
+        script = '''#!/bin/sh
+runtime_dir="/run/user/$(id -u)"
+[ -d "$runtime_dir" ] || exit 0
+
+for socket in "$runtime_dir"/wayland-*; do
+    [ -S "$socket" ] || continue
+    export XDG_RUNTIME_DIR="$runtime_dir"
+    export WAYLAND_DISPLAY="${socket##*/}"
+    if [ -S "$runtime_dir/bus" ]; then
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus"
+    fi
+    exec /usr/bin/sl-daily-background
+done
+exit 0
+'''
+        command = (
+            "set -e\n"
+            f"install -d -m0755 {shlex.quote(f'/home/{username}/.local/bin')}\n"
+            f"printf '%s' {shlex.quote(script)} > {shlex.quote(script_path)}\n"
+            f"chmod 755 {shlex.quote(script_path)}\n"
+            f"chown {shlex.quote(username)}:{shlex.quote(username)} {shlex.quote(script_path)}\n"
+            "tmp_cron=$(mktemp)\n"
+            "trap 'rm -f \"$tmp_cron\"' EXIT\n"
+            f"crontab -u {shlex.quote(username)} -l > \"$tmp_cron\" 2>/dev/null || true\n"
+            f"if ! grep -Fqx -- {shlex.quote(cron_line)} \"$tmp_cron\"; then\n"
+            f"    printf '%s\\n' {shlex.quote(cron_line)} >> \"$tmp_cron\"\n"
+            "fi\n"
+            f"crontab -u {shlex.quote(username)} \"$tmp_cron\"\n"
+        )
+        if not await self.run_in_chroot(command):
+            console.write("[ERROR] Failed to configure the user's sl-daily-background cron job.")
+            return False
+        return True
 
     def _translate_chroot_command(self, command: str) -> str:
         translated = command.replace("/etc/systemd/logind.conf", "/etc/elogind/logind.conf")
@@ -287,7 +337,6 @@ class ArtixInstaller(T2ArchInstaller):
         except ValueError:
             return command
 
-        words = [word for word in words if word != "dms-shell-niri"]
         command = shlex.join(words)
         if len(words) < 3:
             return command
@@ -1112,6 +1161,66 @@ NoDisplay=true
         console.write("sl-greeter and sl-lock installed and configured successfully!")
         return True
 
+    async def wm_enable_dms_service(self) -> bool:
+        """Start DMS with Niri without requiring a systemd user service."""
+        config = shlex.quote(f"/home/{self.username}/.config/niri/config.kdl")
+        startup = shlex.quote('spawn-at-startup "dms" "run"')
+        command = (
+            f"grep -Fqx -- {startup} {config} || "
+            f"printf '%s\n' {startup} >> {config}"
+        )
+        return await self.run_in_chroot(command)
+
+    async def install_t2_touchid(self) -> None:
+        """Install packaged T2 Touch ID with the selected Artix init service."""
+        console = self.query_one("#console", RichLog)
+        if not self.INCLUDE_T2:
+            console.write("[ERROR] T2 Touch ID is only available on T2 Macs.")
+            return
+        if not self.username or not re.fullmatch(r"[a-z_][a-z0-9_-]*", self.username):
+            console.write("[ERROR] Create a regular user before installing T2 Touch ID.")
+            return
+
+        if not await self.configure_t2_repository(use_chroot=not self.post_install_mode):
+            console.write("[ERROR] The arch-mact2 repository is required for Touch ID.")
+            return
+        if not await self.add_slsrepo_to_chroot():
+            console.write("[ERROR] Sl's Arch Repository is required for Artix Touch ID support.")
+            return
+
+        console.write("Installing T2 Touch ID and its Artix services...")
+        if not await self.run_in_chroot(
+            "pacman -S --noconfirm --needed arch-mact2/t2-touchid slsrepo/t2-touchid-artix",
+            timeout=900,
+        ):
+            console.write("[ERROR] Could not install T2 Touch ID with Artix support.")
+            return
+
+        config = "/etc/kait2en/t2-touchid.conf"
+        username = self.username
+        command = (
+            "install -d -m0755 /etc/kait2en && "
+            "if [ ! -e /etc/kait2en/t2-touchid.conf ]; then "
+            "install -m0644 /usr/share/kait2en/t2-touchid.conf "
+            "/etc/kait2en/t2-touchid.conf; fi && "
+            f"sed -i {shlex.quote('s/^T2_TOUCHID_BIND_USER=.*/T2_TOUCHID_BIND_USER=' + username + '/')} "
+            f"{shlex.quote(config)}"
+        )
+        if not await self.run_in_chroot(command):
+            console.write("[ERROR] Failed to set the T2 Touch ID binding user.")
+            return
+
+        if not await self.run_in_chroot(self._enable_service_command("t2-touchid")):
+            console.write("[ERROR] Failed to enable the packaged Touch ID service.")
+            return
+
+        console.write(
+            "T2 Touch ID installed and enabled for "
+            + self.INIT_LABELS[self.init_system] + "."
+        )
+        console.write("After reboot, verify the bridge with fprintd-list and fprintd-verify.")
+        self.maybe_redirect_completion_from_extras()
+
     async def install_desktop_environment(self, de_type: str, is_manual: bool) -> None:
         del is_manual
         console = self.query_one("#console", RichLog)
@@ -1123,6 +1232,11 @@ NoDisplay=true
         if de_type == "niridms":
             if await self.install_niri_with_dms():
                 console.write("Niri with DMS installed successfully!")
+                self._finish_desktop_step()
+            return
+        if de_type == "slash":
+            if await self.install_slash():
+                console.write("Slash installed successfully!")
                 self._finish_desktop_step()
             return
 
