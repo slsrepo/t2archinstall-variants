@@ -292,7 +292,7 @@ exit 0
         if "/etc/systemd/system/greetd.service.d" in translated:
             return "true"
 
-        # Start DMS from Niri instead of systemd.
+        # Start Dux Shell from niri instead of systemd.
         if ".config/systemd/user/niri.service.wants" in translated or "/usr/lib/systemd/user/dms.service" in translated:
             if not self.username:
                 return "true"
@@ -971,7 +971,7 @@ NoDisplay=true
         return True
 
     async def _add_niri_audio_autostart(self, username: str) -> bool:
-        """Add the PipeWire launcher to an existing Niri configuration."""
+        """Add the PipeWire launcher to an existing niri configuration."""
         home = f"/home/{username}"
         launcher = f"{home}/.local/bin/start-pipewire-session"
         config = f"{home}/.config/niri/config.kdl"
@@ -994,7 +994,7 @@ NoDisplay=true
         if installed and self.username:
             if not await self._add_niri_audio_autostart(self.username):
                 self.query_one("#console", RichLog).write(
-                    "[WARN] Could not add the PipeWire launcher to Niri."
+                    "[WARN] Could not add the PipeWire launcher to niri."
                 )
         if installed and not await self.run_in_chroot(
             self._enable_service_command("power-profiles-daemon")
@@ -1010,7 +1010,7 @@ NoDisplay=true
         if installed and self.username:
             if not await self._add_niri_audio_autostart(self.username):
                 self.query_one("#console", RichLog).write(
-                    "[WARN] Could not add the PipeWire launcher to Niri."
+                    "[WARN] Could not add the PipeWire launcher to niri."
                 )
         if installed and not await self.run_in_chroot(
             self._enable_service_command("power-profiles-daemon")
@@ -1109,9 +1109,9 @@ NoDisplay=true
         ]
         for command in commands:
             if not await self.run_in_chroot(command):
-                console.write("[ERROR] Failed to configure greetd with DMS.")
+                console.write("[ERROR] Failed to configure greetd with Dux Greeter.")
                 return False
-        console.write("greetd configured with DMS successfully!")
+        console.write("greetd configured with Dux Greeter successfully!")
         return True
 
     async def wm_install_sl_desktop_utils(self) -> bool:
@@ -1162,7 +1162,7 @@ NoDisplay=true
         return True
 
     async def wm_enable_dms_service(self) -> bool:
-        """Start DMS with Niri without requiring a systemd user service."""
+        """Start Dux Shell with niri without requiring a systemd user service."""
         config = shlex.quote(f"/home/{self.username}/.config/niri/config.kdl")
         startup = shlex.quote('spawn-at-startup "dms" "run"')
         command = (
@@ -1226,12 +1226,12 @@ NoDisplay=true
         console = self.query_one("#console", RichLog)
         if de_type == "niri":
             if await self.install_niri():
-                console.write("Niri installed successfully!")
+                console.write("niri installed successfully!")
                 self._finish_desktop_step()
             return
         if de_type == "niridms":
             if await self.install_niri_with_dms():
-                console.write("Niri with DMS installed successfully!")
+                console.write("niri with Dux Shell installed successfully!")
                 self._finish_desktop_step()
             return
         if de_type == "slash":

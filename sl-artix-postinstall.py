@@ -95,8 +95,8 @@ class SlArtixPostInstaller(ArtixInstaller):
                 yield Static("Desktop Environment / Window Manager", classes="section_title")
                 yield Button("KDE Plasma", id="kde_auto_btn")
                 yield Button("COSMIC", id="cosmic_auto_btn")
-                yield Button("Niri", id="niri_auto_btn")
-                yield Button("Niri + Dux Shell", id="niridms_auto_btn")
+                yield Button("niri", id="niri_auto_btn")
+                yield Button("niri + Dux Shell", id="niridms_auto_btn")
                 yield Button("Slash (niri + Dux + Sl)", id="slash_auto_btn")
 
                 yield Static("Extras", classes="section_title")
